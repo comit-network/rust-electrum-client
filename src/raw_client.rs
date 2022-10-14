@@ -446,9 +446,9 @@ impl RawClient<ElectrumProxyStream> {
 
 #[derive(Debug)]
 enum ChannelMessage {
-    Response(serde_json::Value),
+    Response(Box<serde_json::Value>),
     WakeUp,
-    Error(Arc<std::io::Error>),
+    Error(Box<Arc<std::io::Error>>),
 }
 
 impl<S: Read + Write> RawClient<S> {
@@ -491,7 +491,7 @@ impl<S: Read + Write> RawClient<S> {
                     if let Err(e) = reader.read_line(&mut raw_resp) {
                         let error = Arc::new(e);
                         for (_, s) in self.waiting_map.lock().unwrap().drain() {
-                            s.send(ChannelMessage::Error(error.clone()))?;
+                            s.send(ChannelMessage::Error(Box::new(error.clone())))?;
                         }
                         return Err(Error::SharedIOError(error));
                     }
@@ -540,7 +540,7 @@ impl<S: Read + Write> RawClient<S> {
                             trace!("Reader thread received response for {}", resp_id);
 
                             if let Some(sender) = self.waiting_map.lock()?.remove(&resp_id) {
-                                sender.send(ChannelMessage::Response(resp))?;
+                                sender.send(ChannelMessage::Response(Box::new(resp)))?;
                             } else {
                                 warn!("Missing listener for {}", resp_id);
                             }
@@ -616,7 +616,7 @@ impl<S: Read + Write> RawClient<S> {
                 Err(Error::CouldntLockReader) => {
                     match receiver.recv()? {
                         // Received our response, returning it
-                        ChannelMessage::Response(received) => break Ok(received),
+                        ChannelMessage::Response(received) => break Ok(*received),
                         ChannelMessage::WakeUp => {
                             // We have been woken up, this means that we should try becoming the
                             // reader thread ourselves
@@ -627,7 +627,7 @@ impl<S: Read + Write> RawClient<S> {
                         ChannelMessage::Error(e) => {
                             warn!("Received ChannelMessage::Error");
 
-                            break Err(Error::SharedIOError(e));
+                            break Err(Error::SharedIOError(*e));
                         }
                     }
                 }
@@ -1158,6 +1158,9 @@ mod test {
             let _histories = client.batch_script_get_history(list.clone()).unwrap();
 
             dbg!("Bye");
+
+            dbg!(std::mem::size_of_val(&client.waiting_map));
+            dbg!(std::mem::size_of_val(&client.buf_reader));
 
             let map = client.waiting_map.lock().unwrap();
 
