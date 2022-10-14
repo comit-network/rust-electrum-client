@@ -1009,6 +1009,8 @@ impl<T: Read + Write> ElectrumApi for RawClient<T> {
 
 #[cfg(test)]
 mod test {
+    use std::time::Duration;
+
     use super::RawClient;
     use api::ElectrumApi;
 
@@ -1096,6 +1098,40 @@ mod test {
         let addr = bitcoin::Address::from_str("1CounterpartyXXXXXXXXXXXXXXXUWLpVr").unwrap();
         let resp = client.script_get_balance(&addr.script_pubkey()).unwrap();
         assert!(resp.confirmed >= 213091301265);
+    }
+
+    #[test]
+    fn test_batch_script_get_history() {
+        use std::str::FromStr;
+
+        let client = RawClient::new(get_test_server(), None).unwrap();
+
+        // new address: 38zTM2hA9Xg354HfhLGC5kDJfwv8mSU9Gc
+        // old address: 1FeexV6bAHb8ybZjqQMjJrcCrHGW9sb6uF
+
+        let script_1 = bitcoin::Address::from_str("1FeexV6bAHb8ybZjqQMjJrcCrHGW9sb6uF")
+            .unwrap()
+            .script_pubkey();
+
+        let mut list = Vec::new();
+
+        for _ in 1..7000 {
+            list.push(&script_1);
+        }
+
+        // dbg!("Hello");
+
+        loop {
+            let _histories = client.batch_script_get_history(list.clone()).unwrap();
+
+            dbg!("Bye");
+
+            let map = client.waiting_map.lock().unwrap();
+
+            dbg!(map.len());
+
+            std::thread::sleep(Duration::from_secs(20));
+        }
     }
 
     #[test]
