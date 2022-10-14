@@ -1042,6 +1042,8 @@ impl<T: Read + Write> ElectrumApi for RawClient<T> {
 
 #[cfg(test)]
 mod test {
+    use std::time::Duration;
+
     use super::RawClient;
     use api::ElectrumApi;
 
@@ -1132,6 +1134,55 @@ mod test {
     }
 
     #[test]
+    fn test_batch_script_get_history() {
+        use std::str::FromStr;
+
+        let client = RawClient::new(get_test_server(), None).unwrap();
+
+        // new address: 38zTM2hA9Xg354HfhLGC5kDJfwv8mSU9Gc
+        // old address: 1FeexV6bAHb8ybZjqQMjJrcCrHGW9sb6uF
+
+        let script_1 = bitcoin::Address::from_str("1FeexV6bAHb8ybZjqQMjJrcCrHGW9sb6uF")
+            .unwrap()
+            .script_pubkey();
+
+        let mut list = Vec::new();
+
+        for _ in 1..7000 {
+            list.push(&script_1);
+        }
+
+        // dbg!("Hello");
+
+        loop {
+            let _histories = client.batch_script_get_history(list.clone()).unwrap();
+
+            dbg!("Bye");
+
+            let map = client.waiting_map.lock().unwrap();
+
+            dbg!(map.capacity());
+            dbg!(map.len());
+
+            let buf = client.buf_reader.lock().unwrap();
+
+            dbg!(buf.capacity());
+
+            let headers = client.headers.lock().unwrap();
+
+            dbg!(headers.capacity());
+            dbg!(headers.len());
+
+            let script_notifications = client.script_notifications.lock().unwrap();
+
+            dbg!(script_notifications.capacity());
+            dbg!(script_notifications.len());
+
+            std::thread::sleep(Duration::from_secs(20));
+        }
+    }
+
+    #[test]
     fn test_script_get_history() {
         use std::str::FromStr;
 
@@ -1185,9 +1236,38 @@ mod test {
             .unwrap()
             .script_pubkey();
 
-        let resp = client.batch_script_list_unspent(vec![&script_1]).unwrap();
-        assert_eq!(resp.len(), 1);
-        assert!(resp[0].len() >= 329);
+        let mut list = Vec::new();
+
+        for _ in 1..7000 {
+            list.push(&script_1);
+        }
+
+        loop {
+            let _histories = client.batch_script_list_unspent(list.clone()).unwrap();
+
+            dbg!("Bye");
+
+            let map = client.waiting_map.lock().unwrap();
+
+            dbg!(map.capacity());
+            dbg!(map.len());
+
+            let buf = client.buf_reader.lock().unwrap();
+
+            dbg!(buf.capacity());
+
+            let headers = client.headers.lock().unwrap();
+
+            dbg!(headers.capacity());
+            dbg!(headers.len());
+
+            let script_notifications = client.script_notifications.lock().unwrap();
+
+            dbg!(script_notifications.capacity());
+            dbg!(script_notifications.len());
+
+            std::thread::sleep(Duration::from_secs(20));
+        }
     }
 
     #[test]
