@@ -1117,7 +1117,7 @@ mod test {
             .script_pubkey();
 
         let mut scripts = Vec::new();
-x
+
         for _ in 1..7000 {
             scripts.push(&script_1);
         }
