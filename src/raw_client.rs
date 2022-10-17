@@ -1009,10 +1009,13 @@ impl<T: Read + Write> ElectrumApi for RawClient<T> {
 
 #[cfg(test)]
 mod test {
-    use std::time::Duration;
+    use std::sync::Arc;
+    use std::sync::mpsc::channel;
+    use std::time::{Duration, SystemTime};
 
     use super::RawClient;
     use crate::api::ElectrumApi;
+    use crate::GetHistoryRes;
 
     fn get_test_server() -> String {
         std::env::var("TEST_ELECTRUM_SERVER").unwrap_or("electrum.blockstream.info:50001".into())
@@ -1113,25 +1116,144 @@ mod test {
             .unwrap()
             .script_pubkey();
 
-        let mut list = Vec::new();
+        let mut scripts = Vec::new();
+x
+        for _ in 1..7000 {
+            scripts.push(&script_1);
+        }
+
+        dbg!("Start batch_script_get_history");
+        let start = SystemTime::now();
+
+        let _histories = client.batch_script_get_history(scripts.clone()).unwrap();
+
+        dbg!("Finished batch_script_get_history");
+
+        let map = client.waiting_map.lock().unwrap();
+        let reader = client.buf_reader.lock().unwrap();
+
+        dbg!(map.len());
+        dbg!(map.capacity());
+        dbg!(reader.capacity());
+
+        let end = SystemTime::now();
+        let duration = end.duration_since(start).unwrap();
+        dbg!(duration);
+    }
+
+    // TODO: This does not scale, we need to process in parallel
+    #[test]
+    fn test_script_get_history_multi() {
+        use std::str::FromStr;
+
+        use bitcoin::hashes::hex::FromHex;
+        use bitcoin::Txid;
+
+        let client = RawClient::new(get_test_server(), None).unwrap();
+
+        // Mt.Gox hack address
+        let addr = bitcoin::Address::from_str("1FeexV6bAHb8ybZjqQMjJrcCrHGW9sb6uF").unwrap();
+
+        dbg!("Start batch_script_get_history");
+        let start = SystemTime::now();
+
+        for i in 0..7000 {
+
+
+            let resp = client.script_get_history(&addr.script_pubkey()).unwrap();
+
+            assert!(resp.len() >= 328);
+            // assert_eq!(
+            //     resp[0].tx_hash,
+            //     Txid::from_hex("e67a0550848b7932d7796aeea16ab0e48a5cfe81c4e8cca2c5b03e0416850114")
+            //         .unwrap()
+            // );
+
+            // dbg!(i);
+
+            // let map = client.waiting_map.lock().unwrap();
+            // let reader = client.buf_reader.lock().unwrap();
+
+            // dbg!(map.capacity());
+            // dbg!(reader.capacity());
+        }
+
+        let end = SystemTime::now();
+        let duration = end.duration_since(start).unwrap();
+        dbg!(duration);
+    }
+
+    #[tokio::test]
+    async fn test_script_get_history_multi_batch() {
+        use std::str::FromStr;
+        use bitcoin::hashes::hex::FromHex;
+        use bitcoin::Txid;
+        use futures::Future;
+
+        let client = Arc::new(RawClient::new(get_test_server(), None).unwrap());
+
+        // Mt.Gox hack address
+        let addr = bitcoin::Address::from_str("1FeexV6bAHb8ybZjqQMjJrcCrHGW9sb6uF").unwrap();
+
+        dbg!("Start script_get_history_multi_batch");
+        let start = SystemTime::now();
+
+        let script_1 = bitcoin::Address::from_str("1FeexV6bAHb8ybZjqQMjJrcCrHGW9sb6uF")
+            .unwrap()
+            .script_pubkey();
+
+        let mut scripts = Vec::new();
 
         for _ in 1..7000 {
-            list.push(&script_1);
+            scripts.push(script_1.clone());
         }
 
-        // dbg!("Hello");
+         let (sender, mut receiver) = tokio::sync::mpsc::channel(1000);
 
-        loop {
-            let _histories = client.batch_script_get_history(list.clone()).unwrap();
+        let chunks = scripts.chunks(25).map(|chunk| chunk.to_owned()).collect::<Vec<_>>();
 
-            dbg!("Bye");
+        let batch_futures = chunks.into_iter().map(|batch|{
 
-            let map = client.waiting_map.lock().unwrap();
+            let sender = sender.clone();
+            let batch = batch.clone();
 
-            dbg!(map.len());
+            // TODO: Is is save to clone the client using an arc here?
+            let client = client.clone();
 
-            std::thread::sleep(Duration::from_secs(20));
+            async move {
+                for script in batch {
+
+                    let resp = client.script_get_history(&script).unwrap();
+                    sender.send(resp).await;
+                }
+            }
+        });
+
+        let joined_batch_futures = futures::future::join_all(batch_futures);
+        tokio::spawn(joined_batch_futures);
+
+        let mut counter = 1;
+
+        while let Some(resp) = receiver.recv().await {
+            counter += 1;
+
+            if counter % 500 == 0 {
+                dbg!(counter);
+                let current = SystemTime::now();
+                let duration = current.duration_since(start).unwrap();
+                dbg!(duration);
+            }
+
+            assert_eq!(
+                resp[0].tx_hash,
+                Txid::from_hex("e67a0550848b7932d7796aeea16ab0e48a5cfe81c4e8cca2c5b03e0416850114")
+                    .unwrap()
+            );
         }
+
+        let end = SystemTime::now();
+        let duration = end.duration_since(start).unwrap();
+        dbg!(duration);
     }
 
     #[test]

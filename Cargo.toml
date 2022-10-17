@@ -18,10 +18,12 @@ name = "electrum_client"
 path = "src/lib.rs"
 
 [dependencies]
+futures = { version = "0.3", default-features = false, features = ["std"] }
 log = "^0.4"
 bitcoin = { version = "^0.28", features = ["use-serde"] }
 serde = { version = "^1.0", features = ["derive"] }
 serde_json = { version = "^1.0" }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "net", "tracing"] }
 
 # Optional dependencies
 socks = { version = "0.3", optional = true }
