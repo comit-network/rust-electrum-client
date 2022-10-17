@@ -1009,13 +1009,12 @@ impl<T: Read + Write> ElectrumApi for RawClient<T> {
 
 #[cfg(test)]
 mod test {
-    use std::sync::Arc;
-    use std::sync::mpsc::channel;
-    use std::time::{Duration, SystemTime};
-
     use super::RawClient;
     use crate::api::ElectrumApi;
     use crate::GetHistoryRes;
+    use std::sync::mpsc::channel;
+    use std::sync::Arc;
+    use std::time::{Duration, SystemTime};
 
     fn get_test_server() -> String {
         std::env::var("TEST_ELECTRUM_SERVER").unwrap_or("electrum.blockstream.info:50001".into())
@@ -1158,8 +1157,6 @@ mod test {
         let start = SystemTime::now();
 
         for i in 0..7000 {
-
-
             let resp = client.script_get_history(&addr.script_pubkey()).unwrap();
 
             assert!(resp.len() >= 328);
@@ -1183,12 +1180,11 @@ mod test {
         dbg!(duration);
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 10)]
     async fn test_script_get_history_async_batch() {
-        use std::str::FromStr;
         use bitcoin::hashes::hex::FromHex;
         use bitcoin::Txid;
-        use futures::Future;
+        use std::str::FromStr;
 
         let client = Arc::new(RawClient::new(get_test_server(), None).unwrap());
 
@@ -1208,25 +1204,28 @@ mod test {
             scripts.push(script_1.clone());
         }
 
-         let (sender, mut receiver) = tokio::sync::mpsc::channel(1000);
+        let (sender, receiver) = std::sync::mpsc::channel();
 
-        let chunks = scripts.chunks(25).map(|chunk| chunk.to_owned()).collect::<Vec<_>>();
+        let chunks = scripts
+            .chunks(25)
+            .map(|chunk| chunk.to_owned())
+            .collect::<Vec<_>>();
 
-        let batch_futures = chunks.into_iter().map(|batch|{
-
+        let batch_futures = chunks.into_iter().map(move |batch| {
             let sender = sender.clone();
             let batch = batch.clone();
 
             // TODO: Is is save to clone the client using an arc here?
             let client = client.clone();
 
-            async move {
-                for script in batch {
-
-                    let resp = client.script_get_history(&script).unwrap();
-                    sender.send(resp).await;
+            tokio::task::spawn_blocking({
+                move || {
+                    for script in batch {
+                        let resp = client.script_get_history(&script).unwrap();
+                        sender.send(resp).unwrap();
+                    }
                 }
-            }
+            })
         });
 
         let joined_batch_futures = futures::future::join_all(batch_futures);
@@ -1234,7 +1233,7 @@ mod test {
 
         let mut counter = 1;
 
-        while let Some(resp) = receiver.recv().await {
+        while let Ok(resp) = receiver.recv() {
             counter += 1;
 
             if counter % 500 == 0 {
