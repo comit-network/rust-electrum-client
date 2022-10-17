@@ -1204,7 +1204,7 @@ mod test {
             scripts.push(script_1.clone());
         }
 
-        let (sender, receiver) = std::sync::mpsc::channel();
+        let (sender, mut receiver) = tokio::sync::mpsc::channel(100);
 
         let chunks = scripts
             .chunks(25)
@@ -1222,7 +1222,7 @@ mod test {
                 move || {
                     for script in batch {
                         let resp = client.script_get_history(&script).unwrap();
-                        sender.send(resp).unwrap();
+                        sender.blocking_send(resp).unwrap();
                     }
                 }
             })
@@ -1233,7 +1233,7 @@ mod test {
 
         let mut counter = 1;
 
-        while let Ok(resp) = receiver.recv() {
+        while let Some(resp) = receiver.recv().await {
             counter += 1;
 
             if counter % 500 == 0 {
