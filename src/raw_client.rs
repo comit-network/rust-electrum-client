@@ -1143,7 +1143,7 @@ mod test {
 
     // TODO: This does not scale, we need to process in parallel
     #[test]
-    fn test_script_get_history_multi() {
+    fn test_script_get_history_sequential() {
         use std::str::FromStr;
 
         use bitcoin::hashes::hex::FromHex;
@@ -1184,7 +1184,7 @@ mod test {
     }
 
     #[tokio::test]
-    async fn test_script_get_history_multi_batch() {
+    async fn test_script_get_history_async_batch() {
         use std::str::FromStr;
         use bitcoin::hashes::hex::FromHex;
         use bitcoin::Txid;
